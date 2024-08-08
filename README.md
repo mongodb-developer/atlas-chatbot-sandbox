@@ -26,10 +26,16 @@ The deployment require a docker deamon. The most convenient way is to use GitHub
    ```sh
    pip install -r requirements.txt
    ```
-5. Run the chatbot:
+5. Edit `.env` file and add your OpenAI api key:
+   ```sh
+   OPENAI_API_KEY=sk-xxxxxxxxxxxx
+   ```
+6. Run the chatbot:
    ```sh
    chainlit run chatbot.py
    ```
+
+Upload a PDF file and chat regarding nits context.
 
 ## Local Atlas Deployment
 
