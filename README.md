@@ -7,6 +7,10 @@ This repository contains a chatbot project.
 - **chatbot.py**: Main chatbot script.
 - **requirements.txt**: Python dependencies.
 
+## Prerequisites
+
+The deployment require a docker deamon. The most convenient way is to use GitHub codespaces.
+
 ## Getting Started
 
 1. Clone the repository:
