@@ -12,10 +12,18 @@ from tomodo.common.models import AtlasDeployment
 from tomodo.functional import provision_atlas_instance
 from pymongo.operations import SearchIndexModel
 import chainlit as cl
+from tomodo.common.errors import DeploymentNotFound
+from tomodo.functional import get_deployment
+
+
 
 # Set up local MongoDB
 def setup_local_mongodb():
-    deployment: AtlasDeployment = provision_atlas_instance(
+
+    try:
+        deployment = get_deployment(name="dazzling-mosquito", include_stopped=True)
+    except DeploymentNotFound:
+        deployment: AtlasDeployment = provision_atlas_instance(
         name="dazzling-mosquito",
         port=27017,
         version="7.0",
@@ -25,6 +33,7 @@ def setup_local_mongodb():
         image_tag="1.1.4",
         network_name="mongo_network"
     )
+    
     return deployment
     #return "mongodb://admin:admin@127.0.0.1:27017"
 
@@ -34,7 +43,7 @@ def setup_local_mongodb():
 
 # Connect to local MongoDB instance
 def connect_to_mongodb(deployment):
-    client = MongoClient(f"mongodb://admin:admin@127.0.0.1:27017")
+    client = MongoClient(f"mongodb://foo:bar@127.0.0.1:27017")
     db_name = "langchain_db"
     collection_name = "kb_base"
     collection = client[db_name][collection_name]
@@ -56,6 +65,9 @@ def connect_to_mongodb(deployment):
         name="vector_index",
         type="vectorSearch",
     )
+    
+    client[db_name][collection_name].drop()
+    client[db_name].create_collection(collection_name)
     result = collection.create_search_index(model=search_index_model)
     print(result)
     return client, collection
@@ -68,24 +80,17 @@ def load_and_process_pdf(file):
     docs = text_splitter.split_documents(data)
     return docs
 
-# Create embeddings and store in MongoDB
-def store_embeddings(docs, collection):
-    embeddings = OpenAIEmbeddings(disallowed_special=())
-    for doc in docs:
-        vector = embeddings.embed_query(doc.page_content)
-        collection.insert_one({
-            "content": doc.page_content,
-            "metadata": doc.metadata,
-            "embedding": vector
-        })
+
 
 # Create the vector store
-def create_vector_store(collection):
-    return MongoDBAtlasVectorSearch(
-        collection,
-        OpenAIEmbeddings(disallowed_special=()),
-        index_name="vector_index"
-    )
+def create_vector_store(collection,docs):
+     return MongoDBAtlasVectorSearch.from_documents(
+    documents = docs,
+    embedding = OpenAIEmbeddings(disallowed_special=()),
+    collection = collection,
+    index_name = "vector_index"
+)
+    
 
 # Set up the RAG chain
 def setup_rag_chain(vector_store):
@@ -117,17 +122,42 @@ def setup_rag_chain(vector_store):
 @cl.on_chat_start
 async def on_chat_start():
     # Set up local MongoDB
+    await cl.Message(content="Setting up local Atlas...").send()
     deployment = setup_local_mongodb()
     client, collection = connect_to_mongodb(deployment)
-    
+    await cl.Message(content="Connected to Atlas...").send()
     # Create vector store and RAG chain
-    vector_store = create_vector_store(collection)
+   
+    
+    await cl.Message(content="Welcome! You can start by uploading a PDF or asking questions if PDFs have already been uploaded.").send()
+
+    files = None
+
+    # Wait for the user to upload a file
+    while files == None:
+        files = await cl.AskFileMessage(
+            content="Please upload a PDF file to begin!", accept=["pdf"]
+        ).send()
+
+    text_file = files[0]
+    await cl.Message(content="Prepare file content...").send()
+
+    # with open(text_file.path, "r", encoding="utf-8") as f:
+    #     text = f.read()
+
+    docs = load_and_process_pdf(text_file.path)
+    vector_store = create_vector_store(collection, docs)
+    await cl.Message(f"Processed and stored {len(docs)} document chunks from {text_file.name}").send()
     rag_chain = setup_rag_chain(vector_store)
     
     cl.user_session.set("rag_chain", rag_chain)
     cl.user_session.set("collection", collection)
+
     
-    await cl.Message(content="Welcome! You can start by uploading a PDF or asking questions if PDFs have already been uploaded.").send()
+    # Let the user know that the system is ready
+    # await cl.Message(
+    #     content=f"`{text_file.name}` uploaded, it contains {len(text)} characters!"
+    # ).send()
 
 @cl.on_message
 async def on_message(message: cl.Message):
@@ -140,20 +170,20 @@ async def on_message(message: cl.Message):
     
     await cl.Message(content=response).send()
 
-@cl.on_file_upload(accept=["application/pdf"])
-async def on_file_upload(file: cl.File):
-    collection = cl.user_session.get("collection")
+# @cl.on_file_upload(accept=["application/pdf"])
+# async def on_file_upload(file: cl.File):
+#     collection = cl.user_session.get("collection")
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-        temp_file.write(file.content)
-        temp_file_path = temp_file.name
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+#         temp_file.write(file.content)
+#         temp_file_path = temp_file.name
     
-    docs = load_and_process_pdf(temp_file_path)
-    store_embeddings(docs, collection)
+#     docs = load_and_process_pdf(temp_file_path)
+#     store_embeddings(docs, collection)
     
-    os.unlink(temp_file_path)
+#     os.unlink(temp_file_path)
     
-    await cl.Message(f"Processed and stored {len(docs)} document chunks from {file.name}").send()
+#     await cl.Message(f"Processed and stored {len(docs)} document chunks from {file.name}").send()
 
 if __name__ == "__main__":
     cl.run()
