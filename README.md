@@ -9,7 +9,7 @@ This repository contains a chatbot project.
 
 ## Prerequisites
 
-The deployment require a docker deamon. The most convenient way is to use GitHub codespaces.
+The deployment require a docker deamon. The most convenient way is to use GitHub [codespaces](https://codespaces.new/mongodb-developer/atlas-chatbot-sandbox).
 
 ## Getting Started
 
